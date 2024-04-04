@@ -7,6 +7,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path"
+	"slices"
 	"strings"
 
 	"github.com/isaquecsilva/static-server/model/rules"
@@ -47,6 +49,17 @@ func (uc *UploadController) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	} else if len(header.Filename) == 0 {
 		http.Error(w, "invalid filename", http.StatusBadRequest)
+		return
+	}
+
+	if !slices.ContainsFunc(uc.rules.FileTypes.FileTypeList, func(e string) bool {
+		if strings.Contains(e, path.Ext(header.Filename)[1:]) {
+			return true
+		}
+
+		return false
+	}) {
+		http.Error(w, "file type not allowed", http.StatusBadRequest)
 		return
 	}
 
