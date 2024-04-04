@@ -9,7 +9,7 @@ import (
 
 func InitRoutes(uploadController *upload.UploadController) {
 	http.Handle("GET /upload", middlewares.ConnectionLogger(
-			http.HandlerFunc(uploadController.UploadPage),
+		http.HandlerFunc(uploadController.UploadPage),
 	))
 	
 	http.Handle("POST /upload", middlewares.ConnectionLogger(
