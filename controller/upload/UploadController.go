@@ -37,7 +37,9 @@ type UploadController struct {
 }
 
 func (uc *UploadController) Upload(w http.ResponseWriter, r *http.Request) {
-	reader, header, err := r.FormFile("file")
+	r.ParseMultipartForm(1)
+
+	_, header, err := r.FormFile("file")
 	if err != nil {
 		println("Failure Getting MultiPartReader: ", err.Error())
 		http.Error(w, "error on uploading", http.StatusInternalServerError)
@@ -52,14 +54,17 @@ func (uc *UploadController) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !slices.ContainsFunc(uc.rules.FileTypes.FileTypeList, func(e string) bool {
-		if strings.Contains(e, path.Ext(header.Filename)[1:]) {
-			return true
-		}
+	ext := path.Ext(header.Filename)
 
-		return false
-	}) {
+	if !slices.Contains(uc.rules.FileTypes.FileTypeList, ext) {
 		http.Error(w, "file type not allowed", http.StatusBadRequest)
+		return
+	}
+
+	reader, _, err := r.FormFile("file")
+	if err != nil {
+		println("Failure Getting MultiPartReader: ", err.Error())
+		http.Error(w, "error on uploading", http.StatusInternalServerError)
 		return
 	}
 
@@ -73,16 +78,24 @@ func (uc *UploadController) Upload(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("UPLOADING: %s, SIZE: %d\n", header.Filename, header.Size)
 	io.Copy(file, reader)
+	w.Write([]byte("Enviado."))
 }
 
 func (uc *UploadController) UploadPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html")
 	w.WriteHeader(http.StatusOK)
 
-	if err := uc.templ.Execute(w, struct {
+	var upPageData struct {
 		PageName     string
 		AllowedTypes string
-	}{"File Upload", strings.Join(uc.rules.FileTypes.FileTypeList, ",")}); err != nil {
+	}
+
+	upPageData = struct{PageName string; AllowedTypes string}{
+		PageName: "File Upload",
+		AllowedTypes: strings.Join(uc.rules.FileTypes.FileTypeList, ","),
+	}
+
+	if err := uc.templ.Execute(w, upPageData); err != nil {
 		println("TEMPLATE ERROR: ", err.Error())
 	}
 }
