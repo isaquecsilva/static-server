@@ -6,11 +6,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path"
-	"slices"
 	"strings"
 
 	"github.com/isaquecsilva/static-server/model/rules"
+	"github.com/isaquecsilva/static-server/utils"
 )
 
 const uploadPage string = `<!DOCTYPE html>
@@ -31,8 +30,9 @@ const uploadPage string = `<!DOCTYPE html>
 var MaxUploadSize int64
 
 type UploadController struct {
-	rules *rules.UploadRules
-	templ *template.Template
+	uploadValidations utils.ValidationActions
+	rules             *rules.UploadRules
+	templ             *template.Template
 }
 
 func (uc *UploadController) Upload(w http.ResponseWriter, r *http.Request) {
@@ -41,29 +41,42 @@ func (uc *UploadController) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var checkError = func(err error, errorCode int) bool {
+		if err != nil {
+			println(err.Error())
+			http.Error(w, err.Error(), errorCode)
+			return true
+		}
+
+		return false
+	}
+
 	for _, file := range r.MultipartForm.File["file"] {
-		if len(file.Filename) == 0 {
-			http.Error(w, "invalid filename", http.StatusBadRequest)
-			return
+		for key, validation := range uc.uploadValidations {
+			switch key {
+			case "size":
+				err, errorCode := validation(file, MaxUploadSize, uc.rules.MaxFileSize)
+				if checkError(err, errorCode) {
+					return
+				}
+			case "extension":
+				err, errorCode := validation(file, uc.rules.FileTypes.FileTypeList)
+				if checkError(err, errorCode) {
+					return
+				}
+			default:
+				err, errorCode := validation(file)
+				if checkError(err, errorCode) {
+					return
+				}
+			}
 		}
 
-		ext := path.Ext(file.Filename)
-
-		if !slices.Contains(uc.rules.FileTypes.FileTypeList, ext) {
-			http.Error(w, "file type not allowed", http.StatusBadRequest)
-			return
-		}
-
-		if file.Size > MaxUploadSize {
-			http.Error(w, fmt.Sprintf("file's size overtake the allowed limit, which is %s", uc.rules.MaxFileSize), http.StatusUnprocessableEntity)
-			return
-		}
-
-		reader, err :=  file.Open()
+		reader, err := file.Open()
 		if err != nil {
 			println("could not get multipart file stream: ", err.Error())
 			http.Error(w, fmt.Sprintf("the server was unable to get upload file's stream. Please, try again later."), http.StatusInternalServerError)
-			return			
+			return
 		}
 
 		fmt.Fprintf(os.Stdout, "Uploading %s...\n", file.Filename)
@@ -91,8 +104,11 @@ func (uc *UploadController) UploadPage(w http.ResponseWriter, r *http.Request) {
 		AllowedTypes string
 	}
 
-	upPageData = struct{PageName string; AllowedTypes string}{
-		PageName: "File Upload",
+	upPageData = struct {
+		PageName     string
+		AllowedTypes string
+	}{
+		PageName:     "File Upload",
 		AllowedTypes: strings.Join(uc.rules.FileTypes.FileTypeList, ","),
 	}
 
@@ -107,7 +123,10 @@ func NewUploadController(rules *rules.UploadRules) (*UploadController, error) {
 		return nil, err
 	}
 
+
+
 	return &UploadController{
+		generateUploadValidations(),
 		rules,
 		templ,
 	}, nil
