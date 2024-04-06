@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"html/template"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path"
@@ -23,7 +22,7 @@ const uploadPage string = `<!DOCTYPE html>
 </head>
 <body>
 	<form action="/upload" method="POST" enctype="multipart/form-data">
-		<input type="file" name="file" accept="{{ .AllowedTypes }}" />
+		<input type="file" name="file" accept="{{ .AllowedTypes }}" multiple />
 		<input type="submit" name="upload" />
 	</form>
 </body>
@@ -37,47 +36,49 @@ type UploadController struct {
 }
 
 func (uc *UploadController) Upload(w http.ResponseWriter, r *http.Request) {
-	r.ParseMultipartForm(1)
-
-	_, header, err := r.FormFile("file")
-	if err != nil {
-		println("Failure Getting MultiPartReader: ", err.Error())
-		http.Error(w, "error on uploading", http.StatusInternalServerError)
+	if err := r.ParseMultipartForm(1); err != nil {
+		http.Error(w, "could not process the request", http.StatusInternalServerError)
 		return
 	}
 
-	if header.Size > MaxUploadSize {
-		http.Error(w, fmt.Sprintf("file's size overtake the allowed limit, which is %s", uc.rules.MaxFileSize), http.StatusUnprocessableEntity)
-		return
-	} else if len(header.Filename) == 0 {
-		http.Error(w, "invalid filename", http.StatusBadRequest)
-		return
+	for _, file := range r.MultipartForm.File["file"] {
+		if len(file.Filename) == 0 {
+			http.Error(w, "invalid filename", http.StatusBadRequest)
+			return
+		}
+
+		ext := path.Ext(file.Filename)
+
+		if !slices.Contains(uc.rules.FileTypes.FileTypeList, ext) {
+			http.Error(w, "file type not allowed", http.StatusBadRequest)
+			return
+		}
+
+		if file.Size > MaxUploadSize {
+			http.Error(w, fmt.Sprintf("file's size overtake the allowed limit, which is %s", uc.rules.MaxFileSize), http.StatusUnprocessableEntity)
+			return
+		}
+
+		reader, err :=  file.Open()
+		if err != nil {
+			println("could not get multipart file stream: ", err.Error())
+			http.Error(w, fmt.Sprintf("the server was unable to get upload file's stream. Please, try again later."), http.StatusInternalServerError)
+			return			
+		}
+
+		fmt.Fprintf(os.Stdout, "Uploading %s...\n", file.Filename)
+		file, err := os.Create(file.Filename)
+		if err != nil {
+			println("could not create upload_file: ", err.Error())
+			http.Error(w, "failure uploading", http.StatusInternalServerError)
+			return
+		}
+
+		io.Copy(file, reader)
+		reader.Close()
+		file.Close()
 	}
 
-	ext := path.Ext(header.Filename)
-
-	if !slices.Contains(uc.rules.FileTypes.FileTypeList, ext) {
-		http.Error(w, "file type not allowed", http.StatusBadRequest)
-		return
-	}
-
-	reader, _, err := r.FormFile("file")
-	if err != nil {
-		println("Failure Getting MultiPartReader: ", err.Error())
-		http.Error(w, "error on uploading", http.StatusInternalServerError)
-		return
-	}
-
-	file, err := os.Create(header.Filename)
-	if err != nil {
-		println("could not create upload_file: ", err.Error())
-		http.Error(w, "failure uploading", http.StatusInternalServerError)
-		return
-	}
-	defer file.Close()
-
-	log.Printf("UPLOADING: %s, SIZE: %d\n", header.Filename, header.Size)
-	io.Copy(file, reader)
 	w.Write([]byte("Enviado."))
 }
 

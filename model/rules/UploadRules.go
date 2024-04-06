@@ -6,12 +6,11 @@ import (
 )
 
 const defaultRulesFile string = `<Rules>
+	<-- Only the files extensions listed below can be uploaded -->
 	<FileTypes>
 		<FileType>*.png</FileType>
-		<FileType>*.jpg</FileType>
-		<FileType>*.mp4</FileType>
 	</FileTypes>
-	<MaxFileSize>100MB</MaxFileSize>
+	<MaxFileSize>20MB</MaxFileSize>
 </Rules>`
 
 type UploadRules struct {
