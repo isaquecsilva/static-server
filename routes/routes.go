@@ -19,5 +19,5 @@ func InitRoutes(uploadController *upload.UploadController) {
 
 func InitDefaultHandler(dir *string) {
 	handler := http.FileServer(http.Dir(*dir))
-	http.Handle("GET /", handler)
+	http.Handle("GET /", middlewares.ConnectionLogger(handler))
 }
